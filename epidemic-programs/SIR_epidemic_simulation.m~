@@ -1,0 +1,172 @@
+function observation = SIR_epidemic_simulation(beta, alpha, delta, S, I, seed)
+%%% Program: simulates a stochastic epidemic based off the given parameters. %%%%
+%% takes as inputs:
+% beta: infection rate, alpha: recovery rate, delta: death rate, 
+% S: # pop susceptible to epidemic, I: # pop infected
+% seed : for random generators
+%% outputs: %
+% observation : a matrix of shape num_obs x features 
+% containing the feature vlues for the each of the first 10 time steps
+%%%
+
+
+rng(seed); % set the random seed as passed
+% Define variables
+D = 0; % Total deceased
+R = 0; % % Total recovered
+init_N = S + I + R - D;    % total number of population
+N = init_N;
+
+% # of observations per day
+clockmax = 50; 
+% data structures to store simulation values at each time step
+tsave = zeros(1,clockmax);
+Ssave = zeros(1,clockmax);
+Isave = zeros(1,clockmax);
+Rsave = zeros(1,clockmax);
+Dsave = zeros(1,clockmax);
+S2Isave = zeros(1,clockmax);
+I2Rsave = zeros(1,clockmax);
+I2Dsave = zeros(1,clockmax);
+dSsave = zeros(1,clockmax);
+dIsave = zeros(1,clockmax);
+dRsave = zeros(1,clockmax);
+dDsave = zeros(1,clockmax);
+
+% # of days to run simulation
+tmax = 50; 
+% change simulation calculations with respect to time
+dt = tmax / clockmax;
+
+% matlab indices start at 1 
+for clock = 1 : clockmax
+   t = (clock) * dt;
+   
+   S2I = 0;   % generate S2I 
+   for i = 1 : S % for each susceptible individual in the population
+       if (rand < dt * beta * I/N) 
+           % stochastically determine if infected given 
+           % beta, infected ratio (I/N) and change in time (dt)
+           S2I = S2I + 1;
+       end
+   end
+   I2R = 0; % generate I2R 
+   for j = 1 : I % for each infected individual in the population
+       if (rand < dt * alpha)% randomize for stochasticity
+           % stochastically determine if recovered 
+           % given alpha and the change in time
+           I2R = I2R + 1;
+       end
+   end % generate I2D 
+   I2D = 0;
+   for k = 1 : I % for each infected individual in the population
+       if (rand < dt * delta) 
+           % stochastically determine if deceased
+           % given delta and change in time (dt)
+           I2D = I2D + 1; 
+       end
+   end
+   % get the crude derivatives of each parameter every day
+   dSsave(clock) = S2I;
+   dIsave(clock)= S2I - I2R - I2D;
+   dRsave(clock) =  I2R;
+   dDsave(clock) = I2D;
+   % recalculate new population balance
+   S = S - S2I; 
+   I = I + S2I - I2R - I2D;
+   R = R + I2R;
+   D = D + I2D;
+   % rebalance current population
+   N = S + I + R - D;
+   % save current S I R D at every time step t
+   tsave(clock) = t;
+   Ssave(clock) = S;
+   Isave(clock) = I;
+   Rsave(clock) = R ;
+   Dsave(clock) = D;
+   % save these just in case
+   S2Isave(clock) = S2I;
+   I2Rsave(clock) = I2R;
+   I2Dsave(clock) = I2D;
+end
+
+%%%%%%%%%%%%%%%%%
+%%% FEATURES %%%%
+num_obs = 10; % the first n time steps to record
+%%%%%%%%%%%%%%%%%
+
+% use ratios to pick up subtle changes between variables
+RI_ratio = zeros(num_obs,1);
+IS_ratio = zeros(num_obs,1);
+DI_ratio = zeros(num_obs,1);
+RS_ratio = zeros(num_obs,1);
+DS_ratio = zeros(num_obs,1);
+RD_ratio = zeros(num_obs,1);
+% use total number of each type obbserved at every time step
+Num_Inf = zeros(num_obs,1);
+Num_Scspt = zeros(num_obs,1);
+Num_Recov = zeros(num_obs,1);
+Num_Dcs = zeros(num_obs,1);
+% use daily changes as pseudo proxies for derivatives
+daily_Inf = zeros(num_obs,1);
+daily_Sscpt = zeros(num_obs,1);
+daily_Recov = zeros(num_obs,1);
+daily_Dcs = zeros(num_obs,1);
+
+% matlab iterator
+i = 1; 
+
+% Save the feature values from the first n num_obs observations (10)
+for k = 1:num_obs   
+  % avoid division by 0 edge cases
+  RI_ratio(i,:) =  Rsave(k) / (Isave(k) + 1);
+  RD_ratio(i,:) = Rsave(k) / (Dsave(k) + 1);
+  DI_ratio(i,:) =  Dsave(k) / (Isave(k)+ 1); 
+  % condense ratio, for ease
+  IS_ratio(i,:) =  Isave(k) / (Ssave(k)/100);
+  RS_ratio(i,:) = Rsave(k) / (Ssave(k)/100); 
+  DS_ratio(i,:) = Dsave(k) / (Ssave(k)/100); 
+  % save the straight forward features
+  Num_Scspt(i,:) = Ssave(k);
+  Num_Inf(i,:) = Isave(k);
+  Num_Recov(i,:) = Rsave(k);
+  Num_Dcs(i,:) = Dsave(k);
+  daily_Sscpt(i,:) = dSsave(k);
+  daily_Inf(i,:) = dIsave(k);
+  daily_Recov(i,:) = dRsave(k);
+  daily_Dcs(i,:) = dDsave(k);    
+  i = i + 1; % increase iterator
+end
+
+% create the matrix of feature values for the num_obs time steps
+% to be returned to main function
+observation = [IS_ratio, RI_ratio, DI_ratio, RS_ratio, DS_ratio, RD_ratio, Num_Inf, Num_Scspt, Num_Recov, Num_Dcs, daily_Inf, daily_Sscpt, daily_Recov, daily_Dcs];
+
+% plot the epidemic relationships of infected, recovered and deceased
+subplot(2,1,1);
+hold on
+plot(tsave, Isave, tsave, Dsave, tsave, Rsave,'LineWidth',3);
+lin1 = line([10 10], [0 5000]); % denote 10 days
+lin1.Color = 'green'; lin1.LineStyle = '--'; lin1.MarkerSize=7;
+%hAx=gca;   % get the handle of current axes a
+%set(hAx, 'ytick', 0:500:15000);
+hold off
+legend('Infected', 'Deceased', 'Recovered'); 
+xlabel('Time in Days'), ylabel('# of People');
+title_txt1 = sprintf('Infected, Recovered, Deceased with beta= %.3f, alpha= %.3f, delta= %.3f', beta, alpha, delta);
+title(title_txt1);
+
+% plot the full epidemic simulation results
+subplot(2,1,2); 
+hold on
+plot(tsave, Isave, tsave, Dsave, tsave, Rsave, tsave, Ssave, 'LineWidth',3); 
+lin2 = line([10 10], [0 100000]); % denote 10 days
+lin2.Color = 'green'; lin2.LineStyle = '--'; lin2.MarkerSize=7;
+hold off
+legend('Infected', 'Deceased', 'Recovered', 'Susceptible');
+xlabel('Time in Days'), ylabel('# of People');
+title_txt2 = sprintf('Epidemic Overall with beta= %.3f, alpha= %.3f, delta= %.3f', beta, alpha, delta);
+title(title_txt2);
+
+
+end
